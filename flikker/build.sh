@@ -39,7 +39,7 @@ export LDFLAGS="-Wl,-O1,--icf=safe -Wl,-z,max-page-size=16384"
 ffarch=${triple%%-*}; [ $ffarch = armv7a ] && ffarch=arm
 
 B=$S/build/$abi
-base=$S/prefix/$abi/base$([ $WITH_DAV1D = 1 ] && echo -dav1d || true)
+base=$S/prefix/$abi/base-$config$([ $WITH_DAV1D = 1 ] && echo -dav1d || true)
 ass=$S/prefix/$abi/ass
 mkdir -p $B $base $ass $W/out
 
@@ -83,9 +83,10 @@ if [ ! -f $base/.done ]; then
   ( cd $B/mbedtls
     [ $arch = x86_64 ] && python3 scripts/config.py set MBEDTLS_AESNI_C || python3 scripts/config.py unset MBEDTLS_AESNI_C
     python3 scripts/config.py set MBEDTLS_PLATFORM_DEV_RANDOM '"/dev/urandom"' || true
-    make CFLAGS=-fPIC -j$JOBS no_test >>$LOG 2>&1
-    make DESTDIR=$base install >>$LOG 2>&1 )
-  # (mbedTLS's make install treats DESTDIR as the install prefix.)
+    make CFLAGS=-fPIC -j$JOBS lib >>$LOG 2>&1
+    mkdir -p $base/include $base/lib
+    cp -r include/mbedtls include/psa $base/include/
+    cp library/libmbedtls.a library/libmbedx509.a library/libmbedcrypto.a $base/lib/ )
   extra=()
   if [ $WITH_DAV1D = 1 ]; then
     untar dav1d $v_dav1d $v_dav1d_sha256 tar.xz
@@ -141,7 +142,7 @@ srccopy mpv $v_mpv_commit
 git -C $B/mpv apply $HERE/patches/mpv/0001-mpv_lavc_set_java_vm.patch
 git -C $B/mpv apply $HERE/patches/mpv/0002-optional-libass.patch
 ( cd $B/mpv && meson setup _b --cross-file $(crossfile $base) --prefix=$dest --prefer-static --default-library=shared \
-    -Dlibmpv=true -Dcplayer=false -Dgpl=false -Dlibass=$libass \
+    -Dlibmpv=true -Dcplayer=false -Dgpl=false -Dbuild-date=false -Dcplugins=disabled -Dlibass=$libass \
     -Dlua=disabled -Djavascript=disabled -Dlibcurl=disabled -Diconv=disabled -Duchardet=disabled \
     -Drubberband=disabled -Dlcms2=disabled -Dlibarchive=disabled -Dlibbluray=disabled -Ddvdnav=disabled \
     -Dcdda=disabled -Ddvbin=disabled -Dzimg=disabled -Djpeg=disabled -Dvulkan=disabled -Dshaderc=disabled \

@@ -8,6 +8,7 @@ v_api=21
 
 # FFmpeg: release/9.0 branch head on 2026-11-11 (n9.0.2 plus 57 backports).
 v_ffmpeg_commit=d838f9f9aeb0e09b4d068e2af20a46a12640696f
+# = n9.0.2 + 57 commits (the embedded version string shows the short hash d838f9f)
 v_mpv=v0.42.0
 v_mpv_commit=b0841e8c4d156b8403dc1876c4cbd9011eb583f3
 v_libplacebo=v7.387.0
