@@ -29,8 +29,14 @@ case $config in iptv-min|iptv-safe) ;; *) echo "bad config"; exit 1 ;; esac
 # --- NDK -------------------------------------------------------------
 NDK=$S/ndk/android-ndk-$v_ndk
 if [ ! -d "$NDK" ]; then
-  echo "$v_ndk_sha256  $W/dl/android-ndk-$v_ndk-linux.zip" | sha256sum -c -
-  mkdir -p $S/ndk && unzip -q $W/dl/android-ndk-$v_ndk-linux.zip -d $S/ndk
+  z=$W/dl/android-ndk-$v_ndk-linux.zip
+  if [ ! -f $z ]; then  # download into the volume, not the host
+    z=$S/android-ndk-$v_ndk-linux.zip
+    curl -fsSL -o $z https://dl.google.com/android/repository/android-ndk-$v_ndk-linux.zip
+  fi
+  echo "$v_ndk_sha256  $z" | sha256sum -c -
+  mkdir -p $S/ndk && unzip -q $z -d $S/ndk
+  [ $z = $S/android-ndk-$v_ndk-linux.zip ] && rm -f $z
 fi
 TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 export PATH=$TC/bin:$PATH
