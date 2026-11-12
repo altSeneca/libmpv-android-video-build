@@ -1,0 +1,151 @@
+diff --git a/configure b/configure
+index dc7ec57..cbe0ced 100755
+--- a/configure
++++ b/configure
+@@ -3600,6 +3600,10 @@ nvenc_deps_any="libdl LoadLibrary"
+ 
+ aac_mediacodec_decoder_deps="mediacodec"
+ aac_mediacodec_decoder_select="aac_adtstoasc_bsf aac_parser"
++ac3_mediacodec_decoder_deps="mediacodec"
++ac3_mediacodec_decoder_select="ac3_parser"
++eac3_mediacodec_decoder_deps="mediacodec"
++eac3_mediacodec_decoder_select="ac3_parser"
+ aac_mf_encoder_deps="mediafoundation"
+ ac3_mf_encoder_deps="mediafoundation"
+ amrnb_mediacodec_decoder_deps="mediacodec"
+diff --git a/libavcodec/Makefile b/libavcodec/Makefile
+index 95ba308..b7ad9f0 100644
+--- a/libavcodec/Makefile
++++ b/libavcodec/Makefile
+@@ -209,6 +209,8 @@ OBJS-$(CONFIG_AAC_ENCODER)             += aacenc.o aaccoder.o aacenctab.o    \
+                                           psymodel.o kbdwin.o \
+                                           mpeg4audio_sample_rates.o
+ OBJS-$(CONFIG_AAC_MEDIACODEC_DECODER)  += mediacodecdec.o
++OBJS-$(CONFIG_AC3_MEDIACODEC_DECODER)  += mediacodecdec.o
++OBJS-$(CONFIG_EAC3_MEDIACODEC_DECODER) += mediacodecdec.o
+ OBJS-$(CONFIG_AAC_MF_ENCODER)          += mfenc.o mf_utils.o
+ OBJS-$(CONFIG_AASC_DECODER)            += aasc.o msrledec.o
+ OBJS-$(CONFIG_AC3_DECODER)             += ac3dec_float.o ac3dec_data.o ac3.o \
+diff --git a/libavcodec/allcodecs.c b/libavcodec/allcodecs.c
+index 47eded2..357c48e 100644
+--- a/libavcodec/allcodecs.c
++++ b/libavcodec/allcodecs.c
+@@ -839,6 +839,8 @@ extern const FFCodec ff_idf_decoder;
+ /* external libraries, that shouldn't be used by default if one of the
+  * above is available */
+ extern const FFCodec ff_aac_mediacodec_decoder;
++extern const FFCodec ff_ac3_mediacodec_decoder;
++extern const FFCodec ff_eac3_mediacodec_decoder;
+ extern const FFCodec ff_aac_mf_encoder;
+ extern const FFCodec ff_ac3_mf_encoder;
+ extern const FFCodec ff_amrnb_mediacodec_decoder;
+diff --git a/libavcodec/mediacodecdec.c b/libavcodec/mediacodecdec.c
+index bc176d8..9a16925 100644
+--- a/libavcodec/mediacodecdec.c
++++ b/libavcodec/mediacodecdec.c
+@@ -59,6 +59,13 @@ typedef struct MediaCodecH264DecContext {
+     int use_ndk_codec;
+     // Ref. MediaFormat KEY_OPERATING_RATE
+     int operating_rate;
++
++    // Audio only: MediaCodec decoder to create by name, one option per
++    // codec type so a single option list can serve every wrapper.
++    char *aac_codec_name;
++    char *mp3_codec_name;
++    char *ac3_codec_name;
++    char *eac3_codec_name;
+ } MediaCodecH264DecContext;
+ 
+ static av_cold int mediacodec_decode_close(AVCodecContext *avctx)
+@@ -424,6 +431,16 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
+         if (ret < 0)
+             goto done;
+         break;
++#endif
++#if CONFIG_AC3_MEDIACODEC_DECODER
++    case AV_CODEC_ID_AC3:
++        codec_mime = "audio/ac3";
++        break;
++#endif
++#if CONFIG_EAC3_MEDIACODEC_DECODER
++    case AV_CODEC_ID_EAC3:
++        codec_mime = "audio/eac3";
++        break;
+ #endif
+     default:
+         av_assert0(0);
+@@ -450,6 +467,13 @@ static av_cold int mediacodec_decode_init(AVCodecContext *avctx)
+ 
+     s->ctx->delay_flush = s->delay_flush;
+     s->ctx->use_ndk_codec = s->use_ndk_codec;
++    switch (avctx->codec_id) {
++    case AV_CODEC_ID_AAC:  s->ctx->requested_codec_name = s->aac_codec_name;  break;
++    case AV_CODEC_ID_MP3:  s->ctx->requested_codec_name = s->mp3_codec_name;  break;
++    case AV_CODEC_ID_AC3:  s->ctx->requested_codec_name = s->ac3_codec_name;  break;
++    case AV_CODEC_ID_EAC3: s->ctx->requested_codec_name = s->eac3_codec_name; break;
++    default: break;
++    }
+ 
+     if ((ret = ff_mediacodec_dec_init(avctx, s->ctx, codec_mime, format)) < 0) {
+         s->ctx = NULL;
+@@ -665,6 +689,14 @@ static const AVOption ff_mediacodec_adec_options[] = {
+                    OFFSET(use_ndk_codec), AV_OPT_TYPE_BOOL, {.i64 = -1}, -1, 1, AD },
+     { "operating_rate", "The desired operating rate that the codec will need to operate at, zero for unspecified",
+             OFFSET(operating_rate), AV_OPT_TYPE_INT, {.i64 = 0}, 0, INT_MAX, AD },
++    { "aac_codec_name", "MediaCodec decoder name for AAC (e.g. c2.android.aac.decoder); unset or missing on the device: the platform default for the type",
++            OFFSET(aac_codec_name), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, AD },
++    { "mp3_codec_name", "MediaCodec decoder name for MP3; unset or missing: the platform default",
++            OFFSET(mp3_codec_name), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, AD },
++    { "ac3_codec_name", "MediaCodec decoder name for AC-3; unset or missing: the platform default",
++            OFFSET(ac3_codec_name), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, AD },
++    { "eac3_codec_name", "MediaCodec decoder name for E-AC-3; unset or missing: the platform default",
++            OFFSET(eac3_codec_name), AV_OPT_TYPE_STRING, {.str = NULL}, 0, 0, AD },
+     { NULL }
+ };
+ 
+@@ -710,3 +742,11 @@ DECLARE_MEDIACODEC_ADEC(amrwb, "AMR-WB", AV_CODEC_ID_AMR_WB, NULL)
+ #if CONFIG_MP3_MEDIACODEC_DECODER
+ DECLARE_MEDIACODEC_ADEC(mp3, "MP3", AV_CODEC_ID_MP3, NULL)
+ #endif
++
++#if CONFIG_AC3_MEDIACODEC_DECODER
++DECLARE_MEDIACODEC_ADEC(ac3, "AC-3", AV_CODEC_ID_AC3, NULL)
++#endif
++
++#if CONFIG_EAC3_MEDIACODEC_DECODER
++DECLARE_MEDIACODEC_ADEC(eac3, "E-AC-3", AV_CODEC_ID_EAC3, NULL)
++#endif
+diff --git a/libavcodec/mediacodecdec_common.c b/libavcodec/mediacodecdec_common.c
+index 9a627c0..cb8a5a3 100644
+--- a/libavcodec/mediacodecdec_common.c
++++ b/libavcodec/mediacodecdec_common.c
+@@ -810,7 +810,14 @@ static int mediacodec_dec_get_video_codec(AVCodecContext *avctx, MediaCodecDecCo
+ static int mediacodec_dec_get_audio_codec(AVCodecContext *avctx, MediaCodecDecContext *s,
+                                           const char *mime, FFAMediaFormat *format)
+ {
+-    s->codec = ff_AMediaCodec_createDecoderByType(mime, s->use_ndk_codec);
++    if (s->requested_codec_name && *s->requested_codec_name) {
++        s->codec = ff_AMediaCodec_createCodecByName(s->requested_codec_name, s->use_ndk_codec);
++        if (!s->codec)
++            av_log(avctx, AV_LOG_INFO, "MediaCodec decoder %s not available, using the default for %s\n",
++                   s->requested_codec_name, mime);
++    }
++    if (!s->codec)
++        s->codec = ff_AMediaCodec_createDecoderByType(mime, s->use_ndk_codec);
+     if (!s->codec) {
+         av_log(avctx, AV_LOG_ERROR, "Failed to create media decoder for mime %s\n", mime);
+         return AVERROR_EXTERNAL;
+diff --git a/libavcodec/mediacodecdec_common.h b/libavcodec/mediacodecdec_common.h
+index 0ab2903..b46f2de 100644
+--- a/libavcodec/mediacodecdec_common.h
++++ b/libavcodec/mediacodecdec_common.h
+@@ -71,6 +71,9 @@ typedef struct MediaCodecDecContext {
+     atomic_int serial;
+ 
+     bool use_ndk_codec;
++    // Audio: create this decoder by name when the device has it (borrowed
++    // from the wrapper's options, not owned).
++    const char *requested_codec_name;
+ } MediaCodecDecContext;
+ 
+ int ff_mediacodec_dec_init(AVCodecContext *avctx,

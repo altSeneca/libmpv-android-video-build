@@ -14,6 +14,7 @@ arch=$1; config=$2
 JOBS=${JOBS:-4}
 WITH_DAV1D=${WITH_DAV1D:-0}
 W=/work
+OUT=$W/out/${OUT_TAG:-v2}
 S=/scratch
 LOG=$W/logs/steps-$1-$2.log; mkdir -p $W/logs; : > $LOG
 trap 'echo "FAILED at line $LINENO"; tail -40 $LOG' ERR
@@ -41,13 +42,18 @@ fi
 TC=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 export PATH=$TC/bin:$PATH
 export CC=$triple$v_api-clang CXX=$triple$v_api-clang++ AR=llvm-ar RANLIB=llvm-ranlib NM=llvm-nm STRIP=llvm-strip
-export LDFLAGS="-Wl,-O1,--icf=safe -Wl,-z,max-page-size=16384"
+# 16 KB pages; (v2) a GNU build ID (a hash of the content, so reproducible
+# builds stay reproducible) and no exports from the static archives
+# (FFmpeg, mbedTLS, libplacebo, libass stack, libc++): only mpv's own
+# objects export, which carries the mpv_* client API and
+# mpv_lavc_set_java_vm.
+export LDFLAGS="-Wl,-O1,--icf=safe -Wl,-z,max-page-size=16384 -Wl,--build-id=sha1 -Wl,--exclude-libs,ALL"
 ffarch=${triple%%-*}; [ $ffarch = armv7a ] && ffarch=arm
 
 B=$S/build/$abi
 base=$S/prefix/$abi/base-$config$([ $WITH_DAV1D = 1 ] && echo -dav1d || true)
 ass=$S/prefix/$abi/ass
-mkdir -p $B $base $ass $W/out
+mkdir -p $B $base $ass $OUT
 
 crossfile() { # $1 = prefix
   cat > $B/cross-$(basename $1).txt <<CF
@@ -108,7 +114,7 @@ if [ ! -f $base/.done ]; then
       --cc=$CC --cxx=$CXX --ar=$AR --nm=$NM --ranlib=$RANLIB --strip=$STRIP --pkg-config=pkg-config \
       --arch=$ffarch --cpu=$cpu --extra-cflags="-I$base/include -fPIC $cpuflags" --extra-ldflags="-L$base/lib" \
       --enable-static --disable-shared --pkg-config-flags=--static \
-      "${ff_common[@]}" "${extra[@]}" > $W/out/ffmpeg-configure-$abi-$config.txt
+      "${ff_common[@]}" "${extra[@]}" > $OUT/ffmpeg-configure-$abi-$config.txt
     make -j$JOBS >>$LOG 2>&1
     make install >>$LOG 2>&1 )
   srccopy libplacebo $v_libplacebo_commit
@@ -155,9 +161,9 @@ git -C $B/mpv apply $HERE/patches/mpv/0002-optional-libass.patch
     -Dspirv-cross=disabled -Dsubrandr=disabled -Dlibavdevice=disabled -Dvapoursynth=disabled \
     -Dopensles=enabled -Daaudio=enabled -Daudiotrack=enabled -Degl-android=enabled -Dgl=enabled \
     -Dmanpage-build=disabled -Dhtml-build=disabled -Dpdf-build=disabled \
-  | tee $W/out/mpv-meson-$abi-$config.txt | tail -60 \
+  | tee $OUT/mpv-meson-$abi-$config.txt | tail -60 \
   && ninja -C _b -j$JOBS && ninja -C _b install >>$LOG 2>&1 )
-o=$W/out/$config$([ $WITH_DAV1D = 1 ] && echo -dav1d || true)/$abi
+o=$OUT/$config$([ $WITH_DAV1D = 1 ] && echo -dav1d || true)/$abi
 mkdir -p $o
 cp $dest/lib/libmpv.so $o/libmpv.unstripped.so
 $STRIP --strip-all -o $o/libmpv.so $dest/lib/libmpv.so
@@ -176,9 +182,11 @@ $STRIP --strip-all -o $o/libmpv.so $dest/lib/libmpv.so
   echo "NDK $v_ndk API $v_api"
 } > $o/versions.txt
 llvm-readelf -d $o/libmpv.so > $o/readelf-d.txt
+llvm-readelf -n $o/libmpv.so > $o/readelf-n.txt
+llvm-readelf -lW $o/libmpv.so > $o/readelf-l.txt
 llvm-nm -D --defined-only $o/libmpv.so > $o/nm-D-defined.txt
 llvm-nm $o/libmpv.unstripped.so > $o/nm-all.txt || true
-cp $W/out/ffmpeg-configure-$abi-$config.txt $o/ 2>>$LOG 2>&1 || true
+cp $OUT/ffmpeg-configure-$abi-$config.txt $o/ 2>>$LOG 2>&1 || true
 sha256sum $o/libmpv.so $o/libmpv.unstripped.so > $o/SHA256SUMS
 rm -rf $B/mpv
 echo "DONE $o"; ls -l $o; cat $o/versions.txt
