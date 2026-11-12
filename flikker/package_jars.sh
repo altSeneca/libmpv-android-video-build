@@ -23,7 +23,8 @@ mkdir -p $up $jars
 rm -f $jars/default-*.jar $jars/JAR-SHA256SUMS $jars/CONTENTS-SHA256SUMS
 for abi in arm64-v8a armeabi-v7a x86_64; do
   [ -f $src/$abi/libmpv.so ] || { echo "skip $abi: not built"; continue; }
-  ( cd $src/$abi && shasum -a 256 -c SHA256SUMS >/dev/null )
+  # SHA256SUMS names container paths (/work/...): compare the hash itself.
+  [ "$(sha_of $src/$abi/libmpv.so)" = "$(grep '/libmpv.so$' $src/$abi/SHA256SUMS | cut -d' ' -f1)" ] || { echo "libmpv.so hash differs from SHA256SUMS: $abi" >&2; exit 1; }
   j=$up/default-$abi.jar
   [ -f $j ] || curl -fsSL -o $j $REL/default-$abi.jar
   [ "$(md5_of $j)" = "$(pin $abi)" ] || { echo "upstream jar MD5 mismatch: $abi" >&2; exit 1; }
